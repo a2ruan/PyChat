@@ -1,65 +1,63 @@
-
-# Python program to implement server side of chat room.
 import socket
-import select
-import sys
-from threading import Thread
+import threading
 
+class Server:
+    def __init__(self):
+        self.start_server()
 
-class Server(Thread):
-	MAX_ACTIVE_CONNECTIONS = 100
+    def start_server(self):
+        self.s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        print(socket.gethostbyname(socket.gethostname()))
+        host = socket.gethostbyname(socket.gethostname())
+        #host = '192.168.241.1'
+        #host = '192.168.1.29'
+        port = int(input('Enter port to run the server on --> '))
 
-	def __init__(self, ip_address, port):
-		self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.clients = []
 
-		self.ip_address = ip_address
-		self.port = port
-		self.server.bind((self.ip_address, self.port))
-		
-		self.server.listen(self.MAX_ACTIVE_CONNECTIONS)
-		self.list_of_clients = []
+        self.s.bind((host,port))
+        self.s.listen(100)
+    
+        print('Running on host: '+str(host))
+        print('Running on port: '+str(port))
 
-	def clientthread(self, connection, address):
-	 
-	    # sends a message to the client whose user object is conn
-	    connection.send("Welcome to this chatroom!")
-	 
-	    while True:
-	            try:
-	                message = connection.recv(2048)
-	                if message:
-	 
-	                    """prints the message and address of the
-	                    user who just sent the message on the server
-	                    terminal"""
-	                    print ("<" + address[0] + "> " + message)
-	 
-	                    # Calls broadcast function to send message to all
-	                    message_to_send = "<" + address[0] + "> " + message
-	                    broadcast(message_to_send, connection)
-	 
-	                else:
-	                    """message may have no content if the connection
-	                    is broken, in this case we remove the connection"""
-	                    remove(connection)
-	 
-	            except:
-	                continue
- 
-	def broadcast(self, message, connection):
-	    for clients in self.list_of_clients:
-	        if clients!=connection:
-	            try:
-	                clients.send(message)
-	            except:
-	                clients.close()
-	 
-	                # if the link is broken, we remove the client
-	                remove(clients)
- 
-	def remove(self, connection):
-	    if connection in self.list_of_clients:
-	        self.list_of_clients.remove(connection)
- 
+        self.username_lookup = {}
 
+        while True:
+            c, addr = self.s.accept()
+
+            username = c.recv(1024).decode()
+            
+            print('New connection. Username: '+str(username))
+            self.broadcast('New person joined the room. Username: '+username)
+
+            self.username_lookup[c] = username
+
+            self.clients.append(c)
+             
+            threading.Thread(target=self.handle_client,args=(c,addr,)).start()
+
+    def broadcast(self,msg):
+        for connection in self.clients:
+            connection.send(msg.encode())
+
+    def handle_client(self,c,addr):
+        while True:
+            try:
+                msg = c.recv(1024)
+            except:
+                c.shutdown(socket.SHUT_RDWR)
+                self.clients.remove(c)
+                
+                print(str(self.username_lookup[c])+' left the room.')
+                self.broadcast(str(self.username_lookup[c])+' has left the room.')
+
+                break
+
+            if msg.decode() != '':
+                print('New message: '+str(msg.decode()))
+                for connection in self.clients:
+                    if connection != c:
+                        connection.send(msg)
+
+server = Server()
